@@ -9,6 +9,9 @@ import { setFlagsFromString } from 'node:v8';
 
 // The house baseline turns V8 incremental marking off before it imports solve.js; do the same.
 setFlagsFromString('--no-incremental-marking');
+// This is a short, cold process: the optimising compiler costs more CPU than it saves here.
+// Measurements over repeated cold runs of the practice set put --no-opt about 15% ahead.
+setFlagsFromString('--no-opt');
 
 const { run } = (await import(new URL('./solve.js', import.meta.url).href)) as { run: (input: unknown) => unknown };
 
