@@ -1,6 +1,7 @@
 {
   "type": "module",
   "scripts": {
-    "start": "node main.ts"
+    "start": "node main.ts",
+    "check": "node verify.mjs"
   }
 }
