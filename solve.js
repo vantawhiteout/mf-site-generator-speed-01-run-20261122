@@ -611,16 +611,16 @@ function renderNodes(nodes, scope, ctx, depth) {
 
 // ---------------------------------------------------------------- the build
 
-/** JavaScript's \s set as a code-unit table, so counting non-whitespace runs needs no word array. */
-const SPACE = new Uint8Array(0x3100);
+/** JavaScript's \s set as a code-unit table, so counting non-whitespace runs needs no word array.
+ *  The table spans the whole BMP: U+FEFF (the BOM) is \s too, and sits above U+3100. */
+const SPACE = new Uint8Array(0x10000);
 for (const ch of ['\t', '\n', '\v', '\f', '\r', ' ', '\u00a0', '\u1680', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\ufeff']) SPACE[ch.charCodeAt(0)] = 1;
 for (let i = 0x2000; i <= 0x200a; i++) SPACE[i] = 1;
 function wordsOf(text) {
   let n = 0, i = 0, prev = true;
   const len = text.length;
   for (; i < len; i++) {
-    const c = text.charCodeAt(i);
-    if (c < 0x3100 && SPACE[c]) prev = true;
+    if (SPACE[text.charCodeAt(i)]) prev = true;
     else if (prev) { n++; prev = false; }
   }
   return n;
