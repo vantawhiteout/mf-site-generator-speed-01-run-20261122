@@ -1,75 +1,88 @@
 # Pre-submit check status
 
-## What the "failure" actually was
+## Finding
 
-The repair brief contained no `FAIL` line. Its entire failure text was the CLI's
+The repair brief contains **no `FAIL` line**. Its entire text is the CLI's
 ordinary progress line:
 
 ```
 kit site-generator-speed-01-run-20261122 dev: verified 41 files
 ```
 
-`C:\makefun\build-entry.ps1` runs the check as
+That is not a check failure. The make.fun CLI reports its own verdict, and when
+run with output captured by Node it reports:
+
+```
+ok = true
+failed = []
+14 passed, 0 failed, 6 skipped, 5 checked at submission
+CLI exit 0
+```
+
+The five `at submission` items (`repo_public`, `repo_owner`,
+`repo_created_after_open`, `commit_in_repo`, `duplicate_snapshot`) are decided by
+the site at submission, not by the local check.
+
+## Why the brief looked like a failure
+
+The harness runs the check in Windows PowerShell 5.1 with
+`$ErrorActionPreference = 'Stop'` as:
 
 ```powershell
 $checkOut = (& node cli/makefun.mjs check --kit . --repo $bot --transcripts transcripts.tar.gz 2>&1 | Out-String)
 ```
 
-with `$ErrorActionPreference = 'Stop'`. On Windows PowerShell 5.1 a native
-command's STDERR merged with `2>&1` becomes ErrorRecords; with `Stop` the first
-one throws, the pipeline is torn down, and the CLI is killed. Reproduced here
-with the real command against this checkout:
+The CLI writes its progress lines to STDERR. With `2>&1` under `Stop`, the first
+progress line becomes a terminating error, the pipeline is torn down and the CLI
+is killed (`LASTEXITCODE = -1`). The captured text is just that progress line,
+with no `FAIL` line. Reproduced verbatim against this checkout:
 
-- thrown/captured text: `kit site-generator-speed-01-run-20261122 dev: verified 41 files`
-- `LASTEXITCODE` after the aborted pipeline: `-1`
-- matching `FAIL` lines: `0`
+```
+THREW: kit site-generator-speed-01-run-20261122 dev: verified 41 files
+LASTEXITCODE=-1
+```
 
-The CLI never finished and never reported a failure. Nothing in the entry's
-source caused that; the same check run with both streams captured by Node
-reported `14 passed, 0 failed, 6 skipped, 5 checked at submission`, CLI exit `0`.
+Nothing in the entry's source caused that; the CLI never finished checking.
 
-## Repository-side fix
+## Verified commands (this checkout)
 
-The kit CLI accepts `check --json`. In that mode it passes no log sink, so the
-progress lines are not written to STDERR at all (measured: `stderr` length `0`,
-`stdout` a JSON object with `"ok": true`, `"failed": []`). The wrappers in this
-repository now use that mode and captured child-process pipes:
+Run from the kit with `transcripts.tar.gz` present:
 
-- `check-lib.mjs` — shared runner. Runs `check --json`, renders the CLI's own
-  JSON checks and notes, and fails on a `fail` status, a non-empty `failed`
-  array, `ok: false`, or a non-zero CLI exit. It writes only to STDOUT.
-- `verify.mjs` — `node verify.mjs` / `npm run check`.
-- `presubmit.mjs` — `npm run presubmit`: the check plus `grade-local`, with one
-  verdict.
-- `check.ps1` — the same via `Start-Process` with redirected streams for Windows
-  callers.
+```
+node cli/makefun.mjs check --kit . --repo <bot> --transcripts transcripts.tar.gz --json
+  -> { "ok": true, "failed": [], exit 0 }
 
-Observed after the change: `node verify.mjs`, `node presubmit.mjs` and
-`.\check.ps1` each finished with exit `0`; `node presubmit.mjs` wrote `0` bytes
-to STDERR; `.\check.ps1` did not throw when called under
-`$ErrorActionPreference = 'Stop'` with `2>&1 | Out-String`.
+node presubmit.mjs               (npm run presubmit)
+  -> check: 14 passed, 0 failed, CLI exit 0
+  -> grade-local: status finished, 3 of 3 cases, ranked yes / prize yes, 0 FAIL lines
+  -> "presubmit: all gates passed.", exit 0
 
-The wrappers echo the CLI's real result and invent nothing. They do not change
-the harness's own command line. To stop the harness from tearing down the CLI,
-its check invocation must use the same stream-safe form, for example:
+node verify.mjs                  (npm run check)
+  -> check report, CLI exit 0, exit 0
+```
+
+`--json` makes the CLI pass no log sink, so it writes no progress to STDERR at
+all. The wrappers in this repository (`check-lib.mjs`, `verify.mjs`,
+`presubmit.mjs`, `check.ps1`) use that mode plus captured child-process pipes,
+so none of them can trip the PowerShell trap even if a caller merges their own
+streams with `2>&1` under `Stop`. They echo the CLI's real verdict and invent
+nothing; a genuine `FAIL` line, `ok: false`, non-empty `failed`, or non-zero CLI
+exit still fails them.
+
+## What the harness must change
+
+The wrappers cannot change the harness's fixed command line. To stop it from
+killing the CLI, the harness's own invocation needs the same stream-safe form:
 
 ```powershell
 $checkOut = (& node cli/makefun.mjs check --kit . --repo $bot --transcripts transcripts.tar.gz --json 2>&1 | Out-String)
 ```
 
-or call `npm run presubmit` in this repository and use its exit status. That
-edit belongs to `C:\makefun\build-entry.ps1`, outside this repository.
-
-## Submission-only items
-
-The five `at submission` items (`repo_public`, `repo_owner`,
-`repo_created_after_open`, `commit_in_repo`, `duplicate_snapshot`) are decided by
-the site when the entry is submitted; the local check only prints what will be
-verified. `.makefun/owner.json` names the entry wallet, and the pushed commit is
-the one submitted.
+or it can call `npm run presubmit` in this repository and use that exit status.
+That edit belongs to `C:\makefun\build-entry.ps1`, outside this repository.
 
 ## Source state
 
-`solve.js`, `main.ts` and `package.json` are the deliverable; `LICENSE` keeps
-`SPDX-License-Identifier: MIT`. The check tooling above is auxiliary and is
-checked with the rest of the snapshot.
+`solve.js`, `main.ts`, `LICENSE` and `README.md` are the deliverable. `LICENSE`
+keeps `SPDX-License-Identifier: MIT`. The check tooling above is auxiliary and
+is included with the rest of the snapshot.
