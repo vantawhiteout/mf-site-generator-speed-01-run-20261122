@@ -2,6 +2,7 @@
   "type": "module",
   "scripts": {
     "start": "node main.ts",
-    "check": "node verify.mjs"
+    "check": "node verify.mjs",
+    "presubmit": "node presubmit.mjs"
   }
 }
