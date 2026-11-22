@@ -249,9 +249,14 @@ function inline(s, link, stack) {
   while (i !== -1) {
     const c = s[i];
     if (i > start) out += escapeHtml(s.slice(start, i));
-    if (c === '\\' && i + 1 < n && ESCAPABLE.has(s[i + 1])) {
-      out += ESC1[s[i + 1]] ?? s[i + 1];
-      i += 2;
+    if (c === '\\') {
+      // Only the escapable characters are consumed with the backslash. Any other
+      // backslash is literal text (makefun-site leaves it in place); falling through
+      // to the link branch here would swallow the rest of the line as a link.
+      if (i + 1 < n && ESCAPABLE.has(s[i + 1])) {
+        out += ESC1[s[i + 1]] ?? s[i + 1];
+        i += 2;
+      } else { out += '\\'; i++; }
     } else if (c === '`') {
       const j = s.indexOf('`', i + 1);
       if (j > i + 1) {
