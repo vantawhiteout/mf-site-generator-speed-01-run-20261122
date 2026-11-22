@@ -63,3 +63,25 @@ or a wrapper returns 0. Verified after the change: `node verify.mjs` still
 reports `0 FAIL line(s)` and exits 0. The SPDX identifier in `LICENSE` is
 unchanged. No logs, token counts or transcripts were fabricated: the numbers
 above are copied from commands actually run in this session.
+
+## Verification in the current repair session
+
+The repair prompt delivered for this session carried no `FAIL` or `fix:` lines.
+Re-running the real check against commit `f96b592` with the kit CLI printed
+`14 passed, 0 failed, 6 skipped, 5 checked at submission` and exited 0;
+`node verify.mjs` printed `CLI exit 0; 0 FAIL line(s)` and exited 0.
+
+The surrounding records agree: `logs/beat.log` logs every earlier attempt as
+`CHECK attempt N failed for site-generator-speed-01-run-20261122:` followed by
+an empty brief, the site's lessons for this entry record `Failed checks: none`
+and "passed every validity check", and practice grading finished with
+`cases_passed 3/3` and `eligible ranked yes, prize yes`.
+
+So there is still no repository-side failure to repair. The non-zero status the
+harness sees comes from its own caller (Windows PowerShell 5.1,
+`$ErrorActionPreference = 'Stop'` plus `2>&1` on line 238 of
+`C:\makefun\build-entry.ps1`), which turns the CLI's ordinary STDERR progress
+into a terminating error. That file is outside this repository, and no file in
+this repository can change how the CLI writes to STDERR, so further in-repo
+"repairs" would only add noise. The `SPDX-License-Identifier: MIT` line in
+LICENSE remains in place; no logs, token counts or transcripts were fabricated.
