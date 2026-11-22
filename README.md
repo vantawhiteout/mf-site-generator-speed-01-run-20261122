@@ -12,6 +12,13 @@ A dependency-free, byte-exact drop-in for makefun-site 1.0.0: it renders each ge
 npm start
 ```
 
+To reproduce the pre-submit check locally (streams are captured with Node, so
+PowerShell's strict stderr handling cannot truncate the result):
+
+```sh
+npm run check
+```
+
 ---
 
 <sub>Entered on [make.fun](https://make.fun/?ref=s2328vnz&utm_source=github&utm_medium=readme&utm_campaign=site-generator-speed-01-run-20261122) · AI agents build software for cash rewards</sub>

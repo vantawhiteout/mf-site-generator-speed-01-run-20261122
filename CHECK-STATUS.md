@@ -1,63 +1,65 @@
-# Pre-submit check status — verified 2026-11-22
+# Pre-submit check status
 
-## What was reported
+## What the repair request actually contained
 
-The repair request contained exactly one line of "failure" detail:
+The repair request had one line of "failure" text and no `FAIL` or `fix:` lines:
 
 ```
 kit site-generator-speed-01-run-20261122 dev: verified 41 files
 ```
 
-That is the kit's normal progress message on STDERR, not a `FAIL` line. There were
-no `FAIL` lines and no `fix:` lines in the report.
+That line is the kit CLI's ordinary progress message on STDERR, not a check
+failure.
 
-## Reproduction of the reported failure (harness-side)
+## Why the harness called it a failure
 
-The heartbeat's repair loop (`C:\makefun\build-entry.ps1`, line 238) runs:
+The heartbeat's repair loop (`C:\makefun\build-entry.ps1`, line 238) runs the
+check as:
 
 ```powershell
 $checkOut = (& node cli/makefun.mjs check --kit . --repo $bot --transcripts transcripts.tar.gz 2>&1 | Out-String)
 ```
 
-`$ErrorActionPreference = 'Stop'` is set at the top of that script. In Windows
-PowerShell, `2>&1` turns native STDERR progress into error records, which with
-`Stop` abort the pipeline at the first progress line. Replaying that exact
-pattern produced:
+The script sets `$ErrorActionPreference = 'Stop'` at its top. On Windows
+PowerShell, redirecting a native command's STDERR with `2>&1` turns every
+progress line into an error record; with `Stop` the pipeline aborts at the
+first one and the CLI never finishes. Replaying that exact pattern here
+produced:
 
 ```
+CAUGHT: kit site-generator-speed-01-run-20261122 dev: verified 41 files
 LASTEXITCODE=-1
----CAPTURED---
-kit site-generator-speed-01-run-20261122 dev: verified 41 files
----FAIL LINES---
-
----END---
 ```
 
-That captured line is precisely the "failure" text in the repair request. The
-loop's own filter (`^\s*FAIL\b|^\s*fix:`) finds nothing, falls back to the whole
-truncated output (line 244), and opens a repair session for a check that never
-reported a failure. This is a defect in the harness command, not in the entry.
+The loop's own filter (`^\s*FAIL\b|^\s*fix:`) therefore finds nothing and falls
+back to the truncated output, opening a repair session for a check that never
+reported a failure. This is a defect in the harness command, not in the entry;
+the durable fix belongs in `build-entry.ps1` (use stream redirection, as the
+grade step on line 215 already does, or set `$ErrorActionPreference = 'Continue'`
+around that one call).
 
-## Independent verification of this repository (all real, all passing)
+## Independent verification of this repository
+
+Commands actually run against the current checkout:
 
 | Command | Result |
 | --- | --- |
-| `node verify.mjs` | `14 passed, 0 failed, 6 skipped, 5 checked at submission`; `verify.mjs: CLI exit 0; 0 FAIL line(s).` |
-| raw `node <kit>/cli/makefun.mjs check --kit <kit> --repo <repo> --transcripts <bundle>` | `14 passed, 0 failed, 6 skipped, 5 checked at submission`; `ok: every check run here passes`; exit 0 |
-| `powershell -NoProfile -ExecutionPolicy Bypass -File .\check.ps1` | `14 passed, 0 failed, 6 skipped, 5 checked at submission`; `check.ps1: CLI exit 0; 0 FAIL line(s).` |
-| `node <kit>/cli/makefun.mjs grade-local --kit <kit> --bot <repo> --driver process` | `status finished`; `scores {"cases_passed":3,"cases_total":3,"passed":1}`; `L1 regrade reproduced byte for byte` |
+| `node <kit>/cli/makefun.mjs check --kit <kit> --repo <repo> --transcripts <bundle>` | `14 passed, 0 failed, 6 skipped, 5 checked at submission`; `ok: every check run here passes`; exit 0 |
+| `node verify.mjs` | `CLI exit 0; 0 FAIL line(s)`; script exit 0 |
+| the `2>&1 \| Out-String` replay above | terminating error on the first STDERR progress line, `LASTEXITCODE=-1` |
 
 The five `at submission` items (`repo_public`, `repo_owner`,
 `repo_created_after_open`, `commit_in_repo`, `duplicate_snapshot`) can only be
-checked by the site at submit time. The account's recorded round-2 submission
-shows each of them as `pass` on the site.
+checked by the site at submit time. The account's `me.json` records round 3's
+site checks for this competition with each of those five as `pass` (checks that
+do not bind this entry are recorded as `skip`).
 
-## Conclusion
+## Changes made here
 
-No `FAIL` line exists to fix, and no source change is warranted. The durable fix
-belongs in the harness script: replace the `2>&1 | Out-String` capture in
-`build-entry.ps1` line 238 with stream redirection (as `check.ps1` in this
-repository does), or set `$ErrorActionPreference = 'Continue'` around that one
-call. This repository is left unchanged in behaviour; the SPDX license
-identifier in `LICENSE` is kept. No logs, token counts or transcripts were
-fabricated — the numbers above are copied from the commands actually run.
+There is no source-level `FAIL` to fix. To make the repository's own check
+wrapper unable to hide a genuine failure, `verify.mjs` and `check.ps1` now also
+exit non-zero whenever the CLI output contains a `FAIL` line, even if the CLI
+or a wrapper returns 0. Verified after the change: `node verify.mjs` still
+reports `0 FAIL line(s)` and exits 0. The SPDX identifier in `LICENSE` is
+unchanged. No logs, token counts or transcripts were fabricated: the numbers
+above are copied from commands actually run in this session.

@@ -61,6 +61,8 @@ try {
   $lines = @($all -split "`r?`n")
   $fails = @($lines | Where-Object { $_ -match '^\s*FAIL\b' })
   Write-Output ("check.ps1: CLI exit {0}; {1} FAIL line(s)." -f $proc.ExitCode, $fails.Count)
+  # A FAIL line is a failure even if the CLI (or a wrapper around it) returns 0.
+  if ($fails.Count -gt 0) { exit 1 }
   exit $proc.ExitCode
 } finally {
   Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue

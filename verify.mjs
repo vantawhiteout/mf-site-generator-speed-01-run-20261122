@@ -52,4 +52,6 @@ const fails = output.split(/\r?\n/).filter((line) => /^\s*FAIL\b/.test(line));
 process.stdout.write(
   `\nverify.mjs: CLI exit ${result.status ?? 1}; ${fails.length} FAIL line(s)${fails.length ? `: ${fails.map((line) => line.trim()).join(' | ')}` : ''}.\n`,
 );
-process.exit(result.status ?? 1);
+// A FAIL line is a failure even if the CLI (or a wrapper around it) returns 0.
+// Never let a quiet exit code hide a failure the output still reports.
+process.exit(fails.length > 0 ? 1 : (result.status ?? 1));
