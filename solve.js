@@ -7,25 +7,17 @@ const byCodeUnits = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 // ---------------------------------------------------------------- text
 
-const NEEDS_ESCAPE = /[&<>"']/;
+const ESCAPE_RE = /[&<>"']/g;
+const ESCAPE_TABLE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 /** makefun-site's escape table: & < > " ' in that order, nothing else. */
 function escapeHtml(s) {
-  if (!NEEDS_ESCAPE.test(s)) return s;
-  let out = '', start = 0;
-  for (let i = 0; i < s.length; i++) {
-    let r;
-    switch (s[i]) {
-      case '&': r = '&amp;'; break;
-      case '<': r = '&lt;'; break;
-      case '>': r = '&gt;'; break;
-      case '"': r = '&quot;'; break;
-      case "'": r = '&#39;'; break;
-      default: continue;
-    }
-    out += s.slice(start, i) + r;
-    start = i + 1;
+  ESCAPE_RE.lastIndex = 0;
+  let out = '', start = 0, m;
+  while ((m = ESCAPE_RE.exec(s)) !== null) {
+    out += s.slice(start, m.index) + ESCAPE_TABLE[m[0]];
+    start = m.index + 1;
   }
-  return out + s.slice(start);
+  return start === 0 ? s : out + s.slice(start);
 }
 
 /** The NFKD/collapse slug rule. ASCII needs no normalisation (NFKD is the identity on it). */
@@ -238,22 +230,24 @@ function findSingleStar(s, from) {
   return -1;
 }
 
+/** The next character that can start an inline construct, or -1. Native scans beat a JS char loop. */
+function nextSpecial(s, from) {
+  let best = -1;
+  let k = s.indexOf('\\', from); if (k !== -1) best = k;
+  k = s.indexOf('`', from); if (k !== -1 && (best === -1 || k < best)) best = k;
+  k = s.indexOf('*', from); if (k !== -1 && (best === -1 || k < best)) best = k;
+  k = s.indexOf('[', from); if (k !== -1 && (best === -1 || k < best)) best = k;
+  return best;
+}
+
 /** Inline markdown. Plain runs are escaped in bulk rather than one character at a time. */
 function inline(s, link, stack) {
   const n = s.length;
-  // Four C++ scans find the first interesting character; text with none is escaped in one pass.
-  let i = s.indexOf('\\');
-  let j = s.indexOf('`');
-  if (j !== -1 && (i === -1 || j < i)) i = j;
-  j = s.indexOf('*');
-  if (j !== -1 && (i === -1 || j < i)) i = j;
-  j = s.indexOf('[');
-  if (j !== -1 && (i === -1 || j < i)) i = j;
+  let i = nextSpecial(s, 0);
   if (i === -1) return escapeHtml(s);
   let out = '', start = 0;
-  while (i < n) {
+  while (i !== -1) {
     const c = s[i];
-    if (c !== '\\' && c !== '`' && c !== '*' && c !== '[') { i++; continue; }
     if (i > start) out += escapeHtml(s.slice(start, i));
     if (c === '\\' && i + 1 < n && ESCAPABLE.has(s[i + 1])) {
       out += ESC1[s[i + 1]] ?? s[i + 1];
@@ -288,6 +282,7 @@ function inline(s, link, stack) {
       } else { out += '['; i++; }
     }
     start = i;
+    i = nextSpecial(s, start);
   }
   if (start < n) out += escapeHtml(s.slice(start));
   return out;
@@ -616,20 +611,17 @@ function renderNodes(nodes, scope, ctx, depth) {
 
 // ---------------------------------------------------------------- the build
 
-/** JavaScript's \s set, so counting non-whitespace runs agrees with /\S+/g without allocating the words. */
-function isSpaceCode(c) {
-  return c === 32 || (c >= 9 && c <= 13) || c === 0xa0 || c === 0x1680 ||
-    (c >= 0x2000 && c <= 0x200a) || c === 0x2028 || c === 0x2029 || c === 0x202f ||
-    c === 0x205f || c === 0x3000 || c === 0xfeff;
-}
+/** JavaScript's \s set as a code-unit table, so counting non-whitespace runs needs no word array. */
+const SPACE = new Uint8Array(0x3100);
+for (const ch of ['\t', '\n', '\v', '\f', '\r', ' ', '\u00a0', '\u1680', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\ufeff']) SPACE[ch.charCodeAt(0)] = 1;
+for (let i = 0x2000; i <= 0x200a; i++) SPACE[i] = 1;
 function wordsOf(text) {
-  let n = 0, i = 0;
+  let n = 0, i = 0, prev = true;
   const len = text.length;
-  while (i < len) {
-    while (i < len && isSpaceCode(text.charCodeAt(i))) i++;
-    if (i === len) break;
-    n++;
-    while (i < len && !isSpaceCode(text.charCodeAt(i))) i++;
+  for (; i < len; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x3100 && SPACE[c]) prev = true;
+    else if (prev) { n++; prev = false; }
   }
   return n;
 }
